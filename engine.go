@@ -544,6 +544,14 @@ func (e *Engine) Retry(id string) error {
 	return nil
 }
 
+func (e *Engine) RetryPasswordTasks() int {
+	ids := e.state.PasswordRetryTasks()
+	for _, id := range ids {
+		e.enqueueTask(id)
+	}
+	return len(ids)
+}
+
 func (e *Engine) SubmitPassword(id, pw string) error {
 	pw = strings.TrimSpace(pw)
 	if pw == "" {

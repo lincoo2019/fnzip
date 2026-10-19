@@ -316,6 +316,55 @@ func (s *State) ClearLearned() {
 	s.markDirtyLocked()
 }
 
+// PasswordRetryTasks requeues tasks that are waiting for a password or failed
+// because of a password error. It returns the affected task IDs.
+func (s *State) PasswordRetryTasks() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var ids []string
+	now := time.Now()
+	for _, t := range s.Tasks {
+		retry := t.Status == statusWaitingPassword ||
+			(t.Status == statusFailed && taskPasswordError(t))
+		if !retry {
+			continue
+		}
+		t.Status = statusQueued
+		t.Password = ""
+		t.Tried = 0
+		t.Progress = 0
+		t.Message = "密码库已更新，重新尝试"
+		t.UpdatedAt = now
+		t.Logs = append(t.Logs, now.Format("15:04:05")+"  密码库已更新，重新尝试")
+		if len(t.Logs) > 200 {
+			t.Logs = t.Logs[len(t.Logs)-200:]
+		}
+		ids = append(ids, t.ID)
+	}
+	if len(ids) > 0 {
+		s.markDirtyLocked()
+	}
+	return ids
+}
+
+func taskPasswordError(t *Task) bool {
+	text := strings.ToLower(t.Message)
+	for _, marker := range []string{"wrong password", "password", "密码", "encrypted file", "data error in encrypted"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	for i := len(t.Logs) - 1; i >= 0 && i >= len(t.Logs)-5; i-- {
+		low := strings.ToLower(t.Logs[i])
+		for _, marker := range []string{"wrong password", "密码", "encrypted file"} {
+			if strings.Contains(low, marker) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *State) NewTask(archive string, size, modTime int64, depth int, parentID string) *Task {
 	s.mu.Lock()
 	defer s.mu.Unlock()

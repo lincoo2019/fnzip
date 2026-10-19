@@ -374,7 +374,7 @@
           <div class="field">
             <label>密码库（每行一个，按顺序优先尝试）</label>
             <textarea class="input" id="password-book" placeholder="常用解压密码&#10;www.example.com&#10;123456"></textarea>
-            <div class="hint">文件名、同目录说明文本、历史成功密码也会自动参与匹配；成功密码会自动加入已学习列表。</div>
+            <div class="hint">文件名、同目录说明文本、历史成功密码也会自动参与匹配；成功密码会自动加入已学习列表。新增密码并保存后，等待密码的任务会自动重试。</div>
             <div class="row" style="margin-top:8px;grid-template-columns:1fr auto">
               <input class="input" id="pw-import-path" placeholder="/vol1/1000/passwords.txt" spellcheck="false">
               <button class="btn tiny" id="pw-import-btn">导入文件</button>
@@ -733,7 +733,8 @@
     try {
       const r = await api('/api/passwords/import', { method: 'POST', body: JSON.stringify({ path }) });
       state.dirty = false;
-      toast(r.added > 0 ? `已导入 ${r.added} 个新密码` : '密码均已存在，没有新增');
+      const base = r.added > 0 ? `已导入 ${r.added} 个新密码` : '密码均已存在，没有新增';
+      toast(base + (r.retried ? `，已自动重试 ${r.retried} 个任务` : ''));
       await refresh();
     } catch (err) {
       toast(err.message, true);
@@ -814,9 +815,9 @@
     const btn = $('#save-btn');
     btn.disabled = true;
     try {
-      await api('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
+      const r = await api('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
       state.dirty = false;
-      toast('设置已保存');
+      toast('设置已保存' + (r.retried ? `，已自动重试 ${r.retried} 个密码任务` : ''));
       await refresh();
     } catch (err) {
       toast(err.message, true);

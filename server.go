@@ -100,6 +100,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if in.PasswordBook == nil {
 		in.PasswordBook = current.PasswordBook
 	}
+	added := addedPasswords(current.PasswordBook, cleanStringList(in.PasswordBook))
 	if in.OnlyNew && in.MonitorSince <= 0 {
 		in.MonitorSince = time.Now().Unix()
 	}
@@ -119,10 +120,14 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		in.PasswordBook = []string{}
 	}
 	s.state.SetSettings(in)
+	retried := 0
+	if len(added) > 0 {
+		retried = s.eng.RetryPasswordTasks()
+	}
 	if in.AutoScan {
 		s.eng.ScanNow()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "retried": retried})
 }
 
 func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +173,11 @@ func (s *Server) handlePasswordImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, added := s.state.AddPasswords(list)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "added": added, "total": len(list)})
+	retried := 0
+	if added > 0 {
+		retried = s.eng.RetryPasswordTasks()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "added": added, "total": len(list), "retried": retried})
 }
 
 func (s *Server) handleLearnedDelete(w http.ResponseWriter, r *http.Request) {
@@ -269,6 +278,20 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		"parent": parent,
 		"dirs":   items,
 	})
+}
+
+func addedPasswords(old, new []string) []string {
+	oldSet := map[string]bool{}
+	for _, p := range old {
+		oldSet[p] = true
+	}
+	var added []string
+	for _, p := range new {
+		if !oldSet[p] {
+			added = append(added, p)
+		}
+	}
+	return added
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
