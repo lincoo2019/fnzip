@@ -1,0 +1,117 @@
+#!/bin/bash
+
+APP_DIR="${TRIM_APPDEST:-/var/apps/${TRIM_APPNAME}/target}"
+DATA_DIR="${TRIM_PKGVAR:-/var/apps/${TRIM_APPNAME}/var}"
+PORT="${TRIM_SERVICE_PORT:-18687}"
+PID_FILE="${DATA_DIR}/app.pid"
+LOG_FILE="${DATA_DIR}/info.log"
+
+mkdir -p "${DATA_DIR}"
+
+arch="$(uname -m)"
+case "${arch}" in
+    x86_64|amd64) suffix="amd64" ;;
+    aarch64|arm64) suffix="arm64" ;;
+    *) suffix="amd64" ;;
+esac
+
+BIN="${APP_DIR}/bin/smartunzip-linux-${suffix}"
+SEVENZIP="${APP_DIR}/bin/7zz-linux-${suffix}"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+check_process() {
+    local pid=$1
+    [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null
+}
+
+status() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if check_process "${pid}"; then
+            return 0
+        fi
+        rm -f "${PID_FILE}"
+    fi
+    return 1
+}
+
+start_process() {
+    if status; then
+        return 0
+    fi
+    if [ ! -x "${BIN}" ]; then
+        chmod +x "${BIN}" "${SEVENZIP}" 2>/dev/null
+    fi
+    if [ ! -f "${BIN}" ]; then
+        echo "找不到智能解压程序: ${BIN}" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+        return 1
+    fi
+
+    log_msg "Starting smartunzip on port ${PORT}"
+    nohup "${BIN}" -addr "0.0.0.0:${PORT}" -data-dir "${DATA_DIR}" -7zz "${SEVENZIP}" >> "${LOG_FILE}" 2>&1 &
+    echo $! > "${PID_FILE}"
+
+    local i
+    for i in $(seq 1 20); do
+        sleep 0.5
+        if status; then
+            log_msg "smartunzip started, pid=$(cat "${PID_FILE}")"
+            return 0
+        fi
+    done
+    echo "智能解压启动失败，请查看日志: ${LOG_FILE}" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+    return 1
+}
+
+stop_process() {
+    if [ ! -f "${PID_FILE}" ]; then
+        return 0
+    fi
+    local pid
+    pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+    if check_process "${pid}"; then
+        log_msg "Stopping smartunzip, pid=${pid}"
+        kill -TERM "${pid}" 2>/dev/null
+        local i
+        for i in $(seq 1 10); do
+            if ! check_process "${pid}"; then
+                break
+            fi
+            sleep 1
+        done
+        if check_process "${pid}"; then
+            kill -KILL "${pid}" 2>/dev/null
+        fi
+    fi
+    rm -f "${PID_FILE}"
+    return 0
+}
+
+case "$1" in
+    start)
+        start_process || exit 1
+        exit 0
+        ;;
+    stop)
+        stop_process || exit 1
+        exit 0
+        ;;
+    status)
+        if status; then
+            exit 0
+        fi
+        exit 3
+        ;;
+    restart)
+        stop_process
+        start_process || exit 1
+        exit 0
+        ;;
+    *)
+        exit 1
+        ;;
+esac

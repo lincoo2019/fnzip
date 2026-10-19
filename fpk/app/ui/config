@@ -1,0 +1,13 @@
+{
+  ".url": {
+    "com.smartunzip.app.Application": {
+      "title": "智能解压",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "http",
+      "port": "18687",
+      "url": "/",
+      "allUsers": true
+    }
+  }
+}

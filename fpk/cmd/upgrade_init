@@ -1,0 +1,4 @@
+#!/bin/bash
+APP_ROOT="$(dirname "${TRIM_APPDEST:-/var/apps/${TRIM_APPNAME}/target}")"
+"${APP_ROOT}/cmd/main" stop >/dev/null 2>&1
+exit 0
